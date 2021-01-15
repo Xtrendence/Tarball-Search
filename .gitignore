@@ -1,0 +1,6 @@
+api/output/
+api/config/
+api/node_modules/
+app/node_modules/
+app/android/*.hprof
+app/android/gradle.properties
