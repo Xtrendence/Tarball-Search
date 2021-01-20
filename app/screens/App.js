@@ -3,9 +3,10 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import Svg, { Path } from 'react-native-svg';
 import Constants from 'expo-constants';
 import React, { useEffect } from 'react';
-import { StyleSheet, Text, View, TextInput, TouchableOpacity, Dimensions, ScrollView, Modal } from 'react-native';
+import { StyleSheet, Text, View, TextInput, TouchableOpacity, Dimensions, ScrollView, Modal, ActivityIndicator } from 'react-native';
 import { Crypt, RSA } from 'hybrid-crypto-js';
 import Wol from 'react-native-wol';
+import base64 from 'base-64';
 import FlashMessage, { showMessage, hideMessage } from 'react-native-flash-message';
 import changeNavigationBarColor from 'react-native-navigation-bar-color';
 import CardButton from '../components/CardButton';
@@ -110,6 +111,7 @@ export default function App() {
 			{ !empty(loading) &&
 				<View style={styles.viewLoading}>
 					<Text style={styles.textLoading}>{loading}</Text>
+					<ActivityIndicator size="large" color={"rgb(255,255,255)"} style={{ marginTop:40 }}/>
 				</View>
 			}
 			{ empty(loading) &&
@@ -238,7 +240,57 @@ export default function App() {
 		setTimeout(async () => {
 			await AsyncStorage.removeItem("publicKey");
 			await AsyncStorage.removeItem("privateKey");
-			start();
+			
+			setLoading("Generating Server Keys...");
+
+			let publicKey = base64.encode(await AsyncStorage.getItem("publicKey"));
+			let serverKey = await AsyncStorage.getItem("serverKey");
+			if(!empty(serverKey)) {
+				let pin = base64.encode((encrypt(serverKey, config["pin"])));
+				fetch(config["api"] + "/key", {
+					method: "DELETE",
+					headers: {
+						Accept: "application/json", "Content-Type": "application/json"
+					},
+					body: JSON.stringify({
+						pin: pin,
+						publicKey: publicKey
+					})
+				})
+				.then((json) => {
+					return json.json();
+				})
+				.then(async (response) => {
+					if("error" in response) {
+						setLoading(null);
+						showMessage({
+							message: response.error,
+							type: "danger",
+							backgroundColor: "rgb(220,50,0)"
+						});
+					} else {
+						setTimeout(start, 1500);
+						showMessage({
+							message: response.message,
+							type: "success"
+						});
+					}
+				})
+				.catch((error) => {
+					console.log(error);
+					showMessage({
+						message: "Network Error",
+						type: "warning",
+						backgroundColor: "rgb(240,135,35)"
+					});
+				});
+			} else {
+				showMessage({
+					message: "Server public key not found.",
+					type: "danger",
+					backgroundColor: "rgb(220,50,0)"
+				});
+			}
 		}, 1000);
 	}
 
@@ -323,7 +375,7 @@ export default function App() {
 			let privateKey = await AsyncStorage.getItem("privateKey");
 
 			if(empty(publicKey) || empty(privateKey)) {
-				setLoading("Generating Keys...");
+				setLoading("Generating App Keys...");
 				
 				setTimeout(async () => {
 					let rsa = new RSA({ keySize:keySize });
@@ -345,43 +397,60 @@ export default function App() {
 		try {
 			let selectedJSON = await AsyncStorage.getItem("selectedFiles");
 			let selected = empty(selectedJSON) ? {} : JSON.parse(selectedJSON);
-			let files = Object.keys(selected);
+			let queryFiles = Object.keys(selected);
 
-			if(!empty(files)) {
-				fetch(config["api"] + "/search", {
-					method: "POST",
-					headers: {
-						Accept: "application/json", "Content-Type": "application/json"
-					},
-					body: JSON.stringify({
-						pin: config["pin"],
-						query: searchQuery,
-						files: files
+			if(!empty(queryFiles)) {
+				let privateKey = await AsyncStorage.getItem("privateKey");
+				let publicKey = base64.encode(await AsyncStorage.getItem("publicKey"));
+				let serverKey = await AsyncStorage.getItem("serverKey");
+				if(!empty(serverKey)) {
+					let pin = base64.encode(encrypt(serverKey, config["pin"]));
+					let query = base64.encode(encrypt(serverKey, searchQuery));
+					let files = base64.encode(encrypt(serverKey, JSON.stringify(queryFiles)));
+					fetch(config["api"] + "/search", {
+						method: "POST",
+						headers: {
+							Accept: "application/json", "Content-Type": "application/json"
+						},
+						body: JSON.stringify({
+							pin: pin,
+							publicKey: publicKey,
+							query: query,
+							files: files
+						})
 					})
-				})
-				.then((json) => {
-					return json.json();
-				})
-				.then(async (response) => {
-					if("error" in response) {
+					.then((json) => {
+						return json.json();
+					})
+					.then(async (response) => {
+						if("error" in response) {
+							showMessage({
+								message: response.error,
+								type: "danger",
+								backgroundColor: "rgb(220,50,0)"
+							});
+						} else {
+							let search = JSON.parse(decrypt(privateKey, base64.decode(response["response"])).message);
+
+							getOutput(search.output);
+							setCancel(search.cancel);
+						}
+					})
+					.catch((error) => {
+						console.log(error);
 						showMessage({
-							message: response.error,
-							type: "danger",
-							backgroundColor: "rgb(220,50,0)"
+							message: "Network Error",
+							type: "warning",
+							backgroundColor: "rgb(240,135,35)"
 						});
-					} else {
-						getOutput(response.output);
-						setCancel(response.cancel);
-					}
-				})
-				.catch((error) => {
-					console.log(error);
-					showMessage({
-						message: "Network Error",
-						type: "warning",
-						backgroundColor: "rgb(240,135,35)"
 					});
-				});
+				} else {
+					showMessage({
+						message: "Server public key not found.",
+						type: "danger",
+						backgroundColor: "rgb(220,50,0)"
+					});
+				}
 			}
 		} catch(e) {
 			console.log(e);
@@ -456,66 +525,83 @@ export default function App() {
 	}
 
 	async function getHistory() {
-		fetch(config["api"] + "/output?pin=" + config["pin"], {
-			method: "GET",
-			headers: {
-				Accept: "application/json", "Content-Type": "application/json"
-			}
-		})
-		.then((json) => {
-			return json.json();
-		})
-		.then(async (response) => {
-			if(!empty(response)) {
-				if("error" in response) {
-					setHistoryList();
-					showMessage({
-						message: response.error,
-						type: "danger",
-						backgroundColor: "rgb(220,50,0)"
-					});
+		let publicKey = base64.encode(await AsyncStorage.getItem("publicKey"));
+		let privateKey = await AsyncStorage.getItem("privateKey");
+		let serverKey = await AsyncStorage.getItem("serverKey");
+		if(!empty(serverKey)) {
+			let pin = base64.encode((encrypt(serverKey, config["pin"])));
+			fetch(config["api"] + "/output?pin=" + pin + "&publicKey=" + publicKey, {
+				method: "GET",
+				headers: {
+					Accept: "application/json", "Content-Type": "application/json"
+				}
+			})
+			.then((json) => {
+				return json.json();
+			})
+			.then(async (response) => {
+				if(!empty(response)) {
+					if("error" in response) {
+						setHistoryList();
+						showMessage({
+							message: response.error,
+							type: "danger",
+							backgroundColor: "rgb(220,50,0)"
+						});
+					} else {
+						try {
+							let history = JSON.parse(decrypt(privateKey, base64.decode(response["response"])).message);
+							let ids = Object.keys(history).reverse();
+							setHistoryList(
+								<View>
+									{
+										ids.map((id) => {
+											let file = history[id];
+											let size = file["size"];
+											let url = file["url"];
+											let time = file["time"];
+											return (
+												<CardButton key={id} onPress={() => { switchPage("search"); getOutput(url); }} onLongPress={() => { deleteAlert(id) }} backgroundColor={"rgb(30,30,30)"}>
+													<Text style={styles.textCard}>{time}</Text>
+													<Text style={[styles.textCard, { marginTop: 10 }]}>{id}</Text>
+													<Text style={[styles.textCard, { marginTop:10, fontWeight:"bold" }]}>{size}</Text>
+												</CardButton>
+											);
+										})
+									}
+								</View>
+							);
+						} catch(e) {
+							console.log(e);
+						}
+					}
 				} else {
-					let ids = Object.keys(response).reverse();
-					setHistoryList(
-						<View>
-							{
-								ids.map((id) => {
-									let file = response[id];
-									let size = file["size"];
-									let url = file["url"];
-									let time = file["time"];
-									return (
-										<CardButton key={id} onPress={() => { switchPage("search"); getOutput(url); }} onLongPress={() => { deleteAlert(id) }} backgroundColor={"rgb(30,30,30)"}>
-											<Text style={styles.textCard}>{time}</Text>
-											<Text style={[styles.textCard, { marginTop: 10 }]}>{id}</Text>
-											<Text style={[styles.textCard, { marginTop:10, fontWeight:"bold" }]}>{size}</Text>
-										</CardButton>
-									);
-								})
-							}
-						</View>
-					);
+					if(showPage === "history") {
+						setHistoryList();
+						showMessage({
+							message: "No history found.",
+							type: "danger",
+							backgroundColor: "rgb(220,50,0)"
+						});
+					}
 				}
-			} else {
-				if(showPage === "history") {
-					setHistoryList();
-					showMessage({
-						message: "No history found.",
-						type: "danger",
-						backgroundColor: "rgb(220,50,0)"
-					});
-				}
-			}
-		})
-		.catch((error) => {
-			console.log(error);
-			setHistoryList();
-			showMessage({
-				message: "Network Error",
-				type: "warning",
-				backgroundColor: "rgb(240,135,35)"
+			})
+			.catch((error) => {
+				console.log(error);
+				setHistoryList();
+				showMessage({
+					message: "Network Error",
+					type: "warning",
+					backgroundColor: "rgb(240,135,35)"
+				});
 			});
-		});
+		} else {
+			showMessage({
+				message: "Server public key not found.",
+				type: "danger",
+				backgroundColor: "rgb(220,50,0)"
+			});
+		}
 	}
 
 	function deleteAlert(id) {
@@ -527,40 +613,52 @@ export default function App() {
 		setDeleteID(id);
 	}
 
-	function deleteHistory(id) {
+	async function deleteHistory(id) {
 		deleteAlert(null);
-		fetch(config["api"] + "/output", {
-			method: "DELETE",
-			headers: {
-				Accept: "application/json", "Content-Type": "application/json"
-			},
-			body: JSON.stringify({
-				pin: config["pin"],
-				id: id
+		let publicKey = base64.encode(await AsyncStorage.getItem("publicKey"));
+		let serverKey = await AsyncStorage.getItem("serverKey");
+		if(!empty(serverKey)) {
+			let pin = base64.encode((encrypt(serverKey, config["pin"])));
+			fetch(config["api"] + "/output", {
+				method: "DELETE",
+				headers: {
+					Accept: "application/json", "Content-Type": "application/json"
+				},
+				body: JSON.stringify({
+					pin: pin,
+					publicKey: publicKey,
+					id: id
+				})
 			})
-		})
-		.then((json) => {
-			return json.json();
-		})
-		.then(async (response) => {
-			if("error" in response) {
+			.then((json) => {
+				return json.json();
+			})
+			.then(async (response) => {
+				if("error" in response) {
+					showMessage({
+						message: response.error,
+						type: "danger",
+						backgroundColor: "rgb(220,50,0)"
+					});
+				} else {
+					getHistory();
+				}
+			})
+			.catch((error) => {
+				console.log(error);
 				showMessage({
-					message: response.error,
-					type: "danger",
-					backgroundColor: "rgb(220,50,0)"
+					message: "Network Error",
+					type: "warning",
+					backgroundColor: "rgb(240,135,35)"
 				});
-			} else {
-				getHistory();
-			}
-		})
-		.catch((error) => {
-			console.log(error);
-			showMessage({
-				message: "Network Error",
-				type: "warning",
-				backgroundColor: "rgb(240,135,35)"
 			});
-		});
+		} else {
+			showMessage({
+				message: "Server public key not found.",
+				type: "danger",
+				backgroundColor: "rgb(220,50,0)"
+			});
+		}
 	}
 
 	async function listFiles(files) {
@@ -611,55 +709,74 @@ export default function App() {
 		}
 	}
 
-	function getFiles() {
-		fetch(config["api"] + "/files?pin=" + config["pin"], {
-			method: "GET",
-			headers: {
-				Accept: "application/json", "Content-Type": "application/json"
-			}
-		})
-		.then((json) => {
-			return json.json();
-		})
-		.then(async (response) => {
-			if("error" in response && showPage === "files") {
-				setAllFiles({});
-				setSearchFiles({});
-				setChanged("empty");
+	async function getFiles() {
+		let privateKey = await AsyncStorage.getItem("privateKey");
+		let publicKey = base64.encode(await AsyncStorage.getItem("publicKey"));
+		let serverKey = await AsyncStorage.getItem("serverKey");
+		try {
+			if(!empty(serverKey)) {
+				let pin = base64.encode((encrypt(serverKey, config["pin"])));
+				fetch(config["api"] + "/files?pin=" + pin + "&publicKey=" + publicKey, {
+					method: "GET",
+					headers: {
+						Accept: "application/json", "Content-Type": "application/json"
+					}
+				})
+				.then((json) => {
+					return json.json();
+				})
+				.then(async (response) => {
+					if("error" in response && showPage === "files") {
+						setAllFiles({});
+						setSearchFiles({});
+						setChanged("empty");
+						showMessage({
+							message: response.error,
+							type: "danger",
+							backgroundColor: "rgb(220,50,0)"
+						});
+					} else {
+						if("response" in response) {
+							let files = JSON.parse(decrypt(privateKey, base64.decode(response["response"])).message);
+							listFiles(files);
+
+							let selectedJSON = await AsyncStorage.getItem("selectedFiles");
+							let selected = selectedJSON === null ? null : JSON.parse(selectedJSON);
+
+							setAllFiles(files);
+							setSearchFiles(selected);
+							setChanged(new Date());
+						}
+					}
+				})
+				.catch((error) => {
+					setAllFiles({});
+					setSearchFiles({});
+					setChanged("empty");
+					console.log(error);
+					showMessage({
+						message: "Network Error",
+						type: "warning",
+						backgroundColor: "rgb(240,135,35)"
+					});
+				});
+			} else {
 				showMessage({
-					message: response.error,
+					message: "Server public key not found.",
 					type: "danger",
 					backgroundColor: "rgb(220,50,0)"
 				});
-			} else {
-				if("files" in response) {
-					let files = response["files"];
-					listFiles(files);
-
-					let selectedJSON = await AsyncStorage.getItem("selectedFiles");
-					let selected = selectedJSON === null ? null : JSON.parse(selectedJSON);
-
-					setAllFiles(files);
-					setSearchFiles(selected);
-					setChanged(new Date());
-				}
-			}
-		})
-		.catch((error) => {
-			setAllFiles({});
-			setSearchFiles({});
-			setChanged("empty");
-			console.log(error);
-			showMessage({
-				message: "Network Error",
-				type: "warning",
-				backgroundColor: "rgb(240,135,35)"
-			});
-		});
+			}	
+		} catch(e) {
+			console.log(e);
+		}
 	}
 
-	function getOutput(url) {
+	async function getOutput(url) {
+		let privateKey = await AsyncStorage.getItem("privateKey");
+
 		setOutput();
+
 		let update = setInterval(() => {
 			if(showPage === "search") {
 				fetch(url, {
@@ -679,7 +796,8 @@ export default function App() {
 							backgroundColor: "rgb(220,50,0)"
 						});
 					} else {
-						let lines = response.split(/\r\n|\r|\n/);
+						let result = decrypt(privateKey, base64.decode(response)).message;
+						let lines = result.split(/\r\n|\r|\n/);
 						if(lines.length > 1000) {
 							response = lines.slice(0, 1000);
 							response.push("\n----- Output Truncated Due To Size -----");
@@ -804,39 +922,50 @@ export default function App() {
 		}
 	}
 
-	function shutdownServer() {
-		fetch(config["api"] + "/shutdown?pin=" + config["pin"], {
-			method: "GET",
-			headers: {
-				Accept: "application/json", "Content-Type": "application/json"
-			}
-		})
-		.then((json) => {
-			return json.json();
-		})
-		.then(async (response) => {
-			if(response.message === "Shutting down.") {
+	async function shutdownServer() {
+		let publicKey = base64.encode(await AsyncStorage.getItem("publicKey"));
+		let serverKey = await AsyncStorage.getItem("serverKey");
+		if(!empty(serverKey)) {
+			let pin = base64.encode((encrypt(serverKey, config["pin"])));
+			fetch(config["api"] + "/shutdown?pin=" + pin + "&publicKey=" + publicKey, {
+				method: "GET",
+				headers: {
+					Accept: "application/json", "Content-Type": "application/json"
+				}
+			})
+			.then((json) => {
+				return json.json();
+			})
+			.then(async (response) => {
+				if(response.message === "Shutting down.") {
+					showMessage({
+						message: "Shutting down the server...",
+						type: "success",
+						backgroundColor: "rgb(50,200,75)"
+					});
+				} else {
+					showMessage({
+						message: "Couldn't shutdown the server.",
+						type: "warning",
+						backgroundColor: "rgb(240,135,35)"
+					});
+				}
+			})
+			.catch((error) => {
+				console.log(error);
 				showMessage({
-					message: "Shutting down the server...",
-					type: "success",
-					backgroundColor: "rgb(50,200,75)"
-				});
-			} else {
-				showMessage({
-					message: "Couldn't shutdown the server.",
+					message: "Network Error",
 					type: "warning",
 					backgroundColor: "rgb(240,135,35)"
 				});
-			}
-		})
-		.catch((error) => {
-			console.log(error);
-			showMessage({
-				message: "Network Error",
-				type: "warning",
-				backgroundColor: "rgb(240,135,35)"
 			});
-		});
+		} else {
+			showMessage({
+				message: "Server public key not found.",
+				type: "danger",
+				backgroundColor: "rgb(220,50,0)"
+			});
+		}	
 	}
 }
 
@@ -885,7 +1014,7 @@ const styles = StyleSheet.create({
 		justifyContent: "center",
 	},
 	textLoading: {
-		fontSize: 32,
+		fontSize: 24,
 		fontFamily: "Arial",
 		color: "rgb(255,255,255)",
 		fontWeight: "bold",
