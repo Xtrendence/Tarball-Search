@@ -780,6 +780,16 @@ export default function App() {
 	}
 }
 
+function encrypt(publicKey, plaintext) {
+	let crypt = new Crypt({ aesStandard:"AES-CTR", aesKeySize:256 });
+	return crypt.encrypt(publicKey, plaintext);
+}
+
+function decrypt(privateKey, encrypted) {
+	let crypt = new Crypt({ aesStandard:"AES-CTR", aesKeySize:256 });
+	return crypt.decrypt(privateKey, encrypted);
+}
+
 String.prototype.replaceAll = function(str1, str2, ignore) {
 	return this.replace(new RegExp(str1.replace(/([\/\,\!\\\^\$\{\}\[\]\(\)\.\*\+\?\|\<\>\-\&])/g,"\\$&"),(ignore?"gi":"g")),(typeof(str2)=="string")?str2.replace(/\$/g,"$$$$"):str2);
 };
