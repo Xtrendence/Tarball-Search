@@ -10,6 +10,8 @@ import FlashMessage, { showMessage, hideMessage } from 'react-native-flash-messa
 import changeNavigationBarColor from 'react-native-navigation-bar-color';
 import CardButton from '../components/CardButton';
 
+let keySize = 1024;
+
 const screenWidth = Dimensions.get("window").width;
 
 changeNavigationBarColor("#141414");
@@ -207,13 +209,18 @@ export default function App() {
 										<Text style={styles.textAction}>Save Configuration</Text>
 									</TouchableOpacity>
 								</View>
-								<View style={[styles.viewActions, { marginTop:50 }]}>
+								<View style={[styles.viewActions, { marginTop:20 }]}>
+									<TouchableOpacity onPress={() => { regenerateKeys(); }} style={[styles.buttonAction, { marginTop:0, marginBottom:0 }]}>
+										<Text style={styles.textAction}>Regenerate Keys</Text>
+									</TouchableOpacity>
+								</View>
+								<View style={[styles.viewActions, { marginTop:20 }]}>
 									<TouchableOpacity onPress={() => { awakenServer(); }} style={[styles.buttonAction, { backgroundColor:"rgb(50, 200, 75)" }]}>
 										<Text style={styles.textAction}>Awaken Server</Text>
 									</TouchableOpacity>
 								</View>
 								<View style={styles.viewActions}>
-									<TouchableOpacity onPress={() => { shutdownServer(); }} style={[styles.buttonAction, { backgroundColor:"rgb(255, 50, 0)" }]}>
+									<TouchableOpacity onPress={() => { shutdownServer(); }} style={[styles.buttonAction, { backgroundColor:"rgb(255, 50, 0)", marginTop:0 }]}>
 										<Text style={styles.textAction}>Shutdown Server</Text>
 									</TouchableOpacity>
 								</View>
@@ -226,11 +233,20 @@ export default function App() {
 		</View>
 	);
 
+	async function regenerateKeys() {
+		setLoading("Regenerating...");
+		setTimeout(async () => {
+			await AsyncStorage.removeItem("publicKey");
+			await AsyncStorage.removeItem("privateKey");
+			start();
+		}, 1000);
+	}
+
 	async function start() {
 		getKeys().then(async (keys) => {
 			await AsyncStorage.setItem("publicKey", keys.publicKey);
 			await AsyncStorage.setItem("privateKey", keys.privateKey);
-			
+
 			setLoading(null);
 
 			getConfig().then((configuration) => {
@@ -240,33 +256,77 @@ export default function App() {
 					setSettingsIP(configuration["ip"]);
 					setSettingsPort(configuration["port"]);
 					setSettingsPIN(configuration["pin"]);
+
+					fetch(configuration["api"] + "/key", {
+						method: "GET",
+						headers: {
+							Accept: "text/plain", "Content-Type": "text/plain"
+						}
+					})
+					.then((text) => {
+						return text.text();
+					})
+					.then(async (response) => {
+						if(response.includes("Couldn't")) {
+							showMessage({
+								message: response,
+								type: "danger",
+								backgroundColor: "rgb(220,50,0)"
+							});
+						} else {
+							if(response.includes("-----BEGIN PUBLIC KEY-----")) {
+								await AsyncStorage.setItem("serverKey", response);
+							} else {
+								setTimeout(start, 5000);
+								if(!empty(configuration["ip"] && !empty(configuration["port"]))) {
+									showMessage({
+										message: "Invalid server public key. Retrying...",
+										type: "danger",
+										backgroundColor: "rgb(220,50,0)"
+									});
+								}
+							}
+						}
+					})
+					.catch((error) => {
+						console.log(error);
+						if(!empty(configuration["ip"] && !empty(configuration["port"]))) {
+							showMessage({
+								message: "Network error. Retrying...",
+								type: "warning",
+								backgroundColor: "rgb(240,135,35)"
+							});
+						}
+						setTimeout(start, 5000);
+					});
 				}
 			}).catch((error) => {
 				showMessage({
 					message: "User configuration couldn't be fetched.",
 					type: "danger",
-					backgroundColor: "rgb(255,50,0)"
+					backgroundColor: "rgb(220,50,0)"
 				});
 			});
 		}).catch(() => {
-			start();
+			setTimeout(start, 5000);
 			showMessage({
 				message: "Encryption keys couldn't be fetched. Retrying...",
 				type: "danger",
-				backgroundColor: "rgb(255,50,0)"
+				backgroundColor: "rgb(220,50,0)"
 			});
 		});
 	}
 
 	async function getKeys() {
-		let publicKey = await AsyncStorage.getItem("publicKey");
-		let privateKey = await AsyncStorage.getItem("privateKey");
+		return new Promise(async (resolve, reject) => {
+			let publicKey = await AsyncStorage.getItem("publicKey");
+			let privateKey = await AsyncStorage.getItem("privateKey");
 
-		if(empty(publicKey) || empty(privateKey)) {
-			setLoading("Generating Keys...");
-			return new Promise(async (resolve, reject) => {
+			if(empty(publicKey) || empty(privateKey)) {
+				setLoading("Generating Keys...");
+				
 				setTimeout(async () => {
-					let rsa = new RSA({ keySize:1024 });
+					let rsa = new RSA({ keySize:keySize });
 					rsa.generateKeyPair(keyPair => {
 						if(!empty(keyPair.publicKey) && !empty(keyPair.privateKey)) {
 							resolve(keyPair);
@@ -275,10 +335,10 @@ export default function App() {
 						}				
 					});
 				}, 500);
-			});
-		}
-
-		return { publicKey:publicKey, privateKey:privateKey };
+			} else {
+				resolve({ publicKey:publicKey, privateKey:privateKey });
+			}
+		});
 	}
 
 	async function search(searchQuery) {
@@ -307,7 +367,7 @@ export default function App() {
 						showMessage({
 							message: response.error,
 							type: "danger",
-							backgroundColor: "rgb(255,50,0)"
+							backgroundColor: "rgb(220,50,0)"
 						});
 					} else {
 						getOutput(response.output);
@@ -343,7 +403,7 @@ export default function App() {
 				showMessage({
 					message: response.error,
 					type: "danger",
-					backgroundColor: "rgb(255,50,0)"
+					backgroundColor: "rgb(220,50,0)"
 				});
 			} else {
 				setCancel(null);
@@ -412,7 +472,7 @@ export default function App() {
 					showMessage({
 						message: response.error,
 						type: "danger",
-						backgroundColor: "rgb(255,50,0)"
+						backgroundColor: "rgb(220,50,0)"
 					});
 				} else {
 					let ids = Object.keys(response).reverse();
@@ -442,7 +502,7 @@ export default function App() {
 					showMessage({
 						message: "No history found.",
 						type: "danger",
-						backgroundColor: "rgb(255,50,0)"
+						backgroundColor: "rgb(220,50,0)"
 					});
 				}
 			}
@@ -487,7 +547,7 @@ export default function App() {
 				showMessage({
 					message: response.error,
 					type: "danger",
-					backgroundColor: "rgb(255,50,0)"
+					backgroundColor: "rgb(220,50,0)"
 				});
 			} else {
 				getHistory();
@@ -569,7 +629,7 @@ export default function App() {
 				showMessage({
 					message: response.error,
 					type: "danger",
-					backgroundColor: "rgb(255,50,0)"
+					backgroundColor: "rgb(220,50,0)"
 				});
 			} else {
 				if("files" in response) {
@@ -616,7 +676,7 @@ export default function App() {
 						showMessage({
 							message: response.error,
 							type: "danger",
-							backgroundColor: "rgb(255,50,0)"
+							backgroundColor: "rgb(220,50,0)"
 						});
 					} else {
 						let lines = response.split(/\r\n|\r|\n/);
@@ -659,7 +719,7 @@ export default function App() {
 			showMessage({
 				message: "User configuration couldn't be saved.",
 				type: "danger",
-				backgroundColor: "rgb(255,50,0)"
+				backgroundColor: "rgb(220,50,0)"
 			});
 		});
 	}
@@ -731,7 +791,7 @@ export default function App() {
 					showMessage({
 						message: "Couldn't send the WOL packet.",
 						type: "danger",
-						backgroundColor: "rgb(255,50,0)"
+						backgroundColor: "rgb(220,50,0)"
 					});
 				}
 			});

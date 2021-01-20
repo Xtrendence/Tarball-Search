@@ -13,6 +13,9 @@ const url = require("url");
 const readline = require("readline");
 const body_parser = require("body-parser");
 
+const RSA = require('hybrid-crypto-js').RSA;
+const Crypt = require('hybrid-crypto-js').Crypt;
+
 const spawn = require("child_process").spawn;
 const exec = require("child_process").exec;
 
@@ -26,9 +29,14 @@ process.setMaxListeners(0);
 const filesDirectory = path.join(__dirname, "../");
 const outputDirectory = path.join(__dirname, "./output/");
 const pinFile = path.join(__dirname, "./config/pin.txt");
+const publicKeyFile = path.join(__dirname, "./config/public.txt");
+const privateKeyFile = path.join(__dirname, "./config/private.txt");
 
+let keySize = 1024;
 let activeSearches = {};
 let cancelled = false;
+let publicKey;
+let privateKey;
 
 if(!fs.existsSync(outputDirectory)) {
 	fs.mkdirSync(outputDirectory);
@@ -38,142 +46,186 @@ if(!fs.existsSync(pinFile)) {
 	fs.writeFileSync(pinFile, "");
 }
 
-app.post("/search", async (req, res) => {
-	res.setHeader("Content-Type", "application/json");
-	if(await verifyPin(req.body.pin)) {
-		let ip = getIP();
-		let id = epoch();
+getKeys().then(() => {
+	start();
+}).catch(() => {
+	console.log("Couldn't generate or get RSA key pair.");
+});
 
-		try {
-			if(!empty(req.body.files)) {
-				let valid = true;
-				req.body.files.map((file) => {
-					if(!fs.existsSync(file)) {
-						valid = false;
+function start() {
+	app.get("/key", async (req, res) => {
+		res.setHeader("Content-Type", "text/plain");
+		getKeys().then(() => {
+			res.end(publicKey);
+		}).catch(() => {
+			res.end("Couldn't generate or get the server's RSA key.");
+		});
+	});
+
+	app.post("/search", async (req, res) => {
+		res.setHeader("Content-Type", "application/json");
+		if(await verifyPin(req.body.pin)) {
+			let ip = getIP();
+			let id = epoch();
+
+			try {
+				if(!empty(req.body.files)) {
+					let valid = true;
+					req.body.files.map((file) => {
+						if(!fs.existsSync(file)) {
+							valid = false;
+						}
+					});
+					if(valid) {
+						readFiles(id, req.body.files, 0, req.body.query);
 					}
+				} else {
+					readFiles(id, findByExt(filesDirectory, "tar.gz"), 0, req.body.query);
+				}
+
+				res.json({ 
+					message:"Searching...", 
+					id:id, 
+					output:"http://" + ip + ":" + port + "/output?id=" + id + "&pin=" + req.body.pin,
+					cancel:"http://" + ip + ":" + port + "/cancel?id=" + id + "&pin=" + req.body.pin
 				});
-				if(valid) {
-					readFiles(id, req.body.files, 0, req.body.query);
+			} catch(e) {
+				console.log(e);
+			}
+		} else {
+			res.statusCode = 401;
+			res.json({ error:"Access not authorized." });
+		}
+	});
+
+	app.get("/cancel", async (req, res) => {
+		res.setHeader("Content-Type", "application/json");
+		let queries = url.parse(req.url, true).query;
+		if(await verifyPin(queries.pin)) {
+			if(Object.keys(activeSearches).includes(queries.id.toString())) {
+				cancelled = true;
+				activeSearches[queries.id.toString()].close();
+				delete activeSearches[queries.id.toString()];
+				res.json({ message:"The search has been cancelled." });
+			} else {
+				res.json({ error:"No search found with that ID." });
+			}
+		} else {
+			res.statusCode = 401;
+			res.json({ error:"Access not authorized." });
+		}
+	});
+
+	app.get("/files", async (req, res) => {
+		res.setHeader("Content-Type", "application/json");
+		let queries = url.parse(req.url, true).query;
+		if(await verifyPin(queries.pin)) {
+			try {
+				let files = findByExt(filesDirectory, "tar.gz");
+				if(files.length === 0) {
+					res.json({ error:"No files found." });
+				} else {
+					res.json({ files:files });
+				}
+			} catch(e) {
+				console.log(e);
+			}
+		} else {
+			res.statusCode = 401;
+			res.json({ error:"Access not authorized." });
+		}
+	});
+
+	app.get("/output", async (req, res) => {
+		res.setHeader("Content-Type", "application/json");
+		let queries = url.parse(req.url, true).query;
+		if(await verifyPin(queries.pin)) {
+			if(!empty(queries.id)) {
+				let content = await getOutput(queries.id.toString());
+				if(!content) {
+					res.json({ error:"File not found." });
+				} else {
+					res.setHeader("Content-Type", "text/plain");
+					res.end(content);
 				}
 			} else {
-				readFiles(id, findByExt(filesDirectory, "tar.gz"), 0, req.body.query);
-			}
-
-			res.json({ 
-				message:"Searching...", 
-				id:id, 
-				output:"http://" + ip + ":" + port + "/output?id=" + id + "&pin=" + req.body.pin,
-				cancel:"http://" + ip + ":" + port + "/cancel?id=" + id + "&pin=" + req.body.pin
-			});
-		} catch(e) {
-			console.log(e);
-		}
-	} else {
-		res.statusCode = 401;
-		res.json({ error:"Access not authorized." });
-	}
-});
-
-app.get("/cancel", async (req, res) => {
-	res.setHeader("Content-Type", "application/json");
-	let queries = url.parse(req.url, true).query;
-	if(await verifyPin(queries.pin)) {
-		if(Object.keys(activeSearches).includes(queries.id.toString())) {
-			cancelled = true;
-			activeSearches[queries.id.toString()].close();
-			delete activeSearches[queries.id.toString()];
-			res.json({ message:"The search has been cancelled." });
+				let response = {};
+				let files = fs.readdirSync(outputDirectory);
+				files.map((id) => {
+					let stats = fs.statSync(outputDirectory + id);
+					let size = humanFileSize(stats.size);
+					let time = formatDate(new Date(id * 1000));
+					response[id] = { url:"http://" + getIP() + ":" + port + "/output?id=" + id + "&pin=" + queries.pin, size:size, time:time };
+				});
+				res.json(response);
+			}		
 		} else {
-			res.json({ error:"No search found with that ID." });
+			res.statusCode = 401;
+			res.json({ error:"Access not authorized." });
 		}
-	} else {
-		res.statusCode = 401;
-		res.json({ error:"Access not authorized." });
-	}
-});
+	});
 
-app.get("/files", async (req, res) => {
-	res.setHeader("Content-Type", "application/json");
-	let queries = url.parse(req.url, true).query;
-	if(await verifyPin(queries.pin)) {
-		try {
-			let files = findByExt(filesDirectory, "tar.gz");
-			if(files.length === 0) {
-				res.json({ error:"No files found." });
-			} else {
-				res.json({ files:files });
-			}
-		} catch(e) {
-			console.log(e);
-		}
-	} else {
-		res.statusCode = 401;
-		res.json({ error:"Access not authorized." });
-	}
-});
-
-app.get("/output", async (req, res) => {
-	res.setHeader("Content-Type", "application/json");
-	let queries = url.parse(req.url, true).query;
-	if(await verifyPin(queries.pin)) {
-		if(!empty(queries.id)) {
-			let content = await getOutput(queries.id.toString());
-			if(!content) {
-				res.json({ error:"File not found." });
-			} else {
-				res.setHeader("Content-Type", "text/plain");
-				res.end(content);
+	app.delete("/output", async (req, res) => {
+		res.setHeader("Content-Type", "application/json");
+		if(await verifyPin(req.body.pin)) {
+			try {
+				if(await deleteFile(req.body.id.toString())) {
+					res.json({ message:"The file has been deleted." });
+				} else {
+					res.json({ error:"The file couldn't be deleted." });
+				}
+			} catch(e) {
+				console.log(e);
 			}
 		} else {
-			let response = {};
-			let files = fs.readdirSync(outputDirectory);
-			files.map((id) => {
-				let stats = fs.statSync(outputDirectory + id);
-				let size = humanFileSize(stats.size);
-				let time = formatDate(new Date(id * 1000));
-				response[id] = { url:"http://" + getIP() + ":" + port + "/output?id=" + id + "&pin=" + queries.pin, size:size, time:time };
-			});
-			res.json(response);
-		}		
-	} else {
-		res.statusCode = 401;
-		res.json({ error:"Access not authorized." });
-	}
-});
+			res.statusCode = 401;
+			res.json({ error:"Access not authorized." });
+		}
+	});
 
-app.delete("/output", async (req, res) => {
-	res.setHeader("Content-Type", "application/json");
-	if(await verifyPin(req.body.pin)) {
-		try {
-			if(await deleteFile(req.body.id.toString())) {
-				res.json({ message:"The file has been deleted." });
-			} else {
-				res.json({ error:"The file couldn't be deleted." });
+	app.get("/shutdown", async (req, res) => {
+		res.setHeader("Content-Type", "application/json");
+		let queries = url.parse(req.url, true).query;
+		if(await verifyPin(queries.pin)) {
+			try {
+				exec("shutdown /s");
+				res.json({ message:"Shutting down." });
+			} catch(e) {
+				console.log(e);
 			}
-		} catch(e) {
-			console.log(e);
+		} else {
+			res.statusCode = 401;
+			res.json({ error:"Access not authorized." });
 		}
-	} else {
-		res.statusCode = 401;
-		res.json({ error:"Access not authorized." });
-	}
-});
+	});
+}
 
-app.get("/shutdown", async (req, res) => {
-	res.setHeader("Content-Type", "application/json");
-	let queries = url.parse(req.url, true).query;
-	if(await verifyPin(queries.pin)) {
-		try {
-			exec("shutdown /s");
-			res.json({ message:"Shutting down." });
-		} catch(e) {
-			console.log(e);
+function getKeys() {
+	return new Promise((resolve, reject) => {
+		if(!fs.existsSync(publicKeyFile) || !fs.existsSync(privateKeyFile)) {
+			let rsa = new RSA({ keySize:keySize });
+			rsa.generateKeyPair(keyPair => {
+				if(!empty(keyPair.publicKey) && !empty(keyPair.privateKey)) {
+					fs.writeFileSync(publicKeyFile, keyPair.publicKey);
+					fs.writeFileSync(privateKeyFile, keyPair.privateKey);
+					publicKey = keyPair.publicKey;
+					privateKey = keyPair.privateKey;
+					resolve();
+				} else {
+					reject();
+				}
+			});
+		} else {
+			publicKey = fs.readFileSync(publicKeyFile, { encoding:"utf-8" });
+			privateKey = fs.readFileSync(privateKeyFile, { encoding:"utf-8" });
+			if(!empty(publicKey) && !empty(privateKey)) {
+				resolve();
+			} else {
+				reject();
+			}
 		}
-	} else {
-		res.statusCode = 401;
-		res.json({ error:"Access not authorized." });
-	}
-});
+	});
+}
 
 async function deleteFile(id) {
 	let file = outputDirectory + id;

@@ -14,7 +14,9 @@
     "body-parser": "^1.19.0",
     "cors": "^2.8.5",
     "express": "^4.17.1",
+    "hybrid-crypto-js": "^0.2.4",
     "ip": "^1.1.5",
+    "node-forge": "^0.10.0",
     "readline": "^1.3.0",
     "yarn": "^1.22.10",
     "zlib": "^1.0.5"
