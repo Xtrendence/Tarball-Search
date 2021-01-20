@@ -4,6 +4,7 @@ import Svg, { Path } from 'react-native-svg';
 import Constants from 'expo-constants';
 import React, { useEffect } from 'react';
 import { StyleSheet, Text, View, TextInput, TouchableOpacity, Dimensions, ScrollView, Modal } from 'react-native';
+import Wol from 'react-native-wol';
 import FlashMessage, { showMessage, hideMessage } from 'react-native-flash-message';
 import changeNavigationBarColor from 'react-native-navigation-bar-color';
 import CardButton from '../components/CardButton';
@@ -28,6 +29,7 @@ export default function App() {
 	const [deleteModal, setDeleteModal] = React.useState(false);
 	const [deleteID, setDeleteID] = React.useState();
 
+	const [settingsMAC, setSettingsMAC] = React.useState();
 	const [settingsIP, setSettingsIP] = React.useState();
 	const [settingsPort, setSettingsPort] = React.useState();
 	const [settingsPIN, setSettingsPIN] = React.useState();
@@ -40,6 +42,7 @@ export default function App() {
 		getConfig().then((configuration) => {
 			if(checkConfig(configuration) === true) {
 				setConfig(configuration);
+				setSettingsMAC(configuration["mac"]);
 				setSettingsIP(configuration["ip"]);
 				setSettingsPort(configuration["port"]);
 				setSettingsPIN(configuration["pin"]);
@@ -47,7 +50,8 @@ export default function App() {
 		}).catch((error) => {
 			showMessage({
 				message: "User configuration couldn't be fetched.",
-				type: "danger"
+				type: "danger",
+				backgroundColor: "rgb(255,50,0)"
 			});
 		});
 	}, []);
@@ -73,7 +77,8 @@ export default function App() {
 			if(check !== "initial") {
 				showMessage({
 					message: check,
-					type: "warning"
+					type: "warning",
+					backgroundColor: "rgb(240,135,35)"
 				});
 			}
 		}
@@ -195,7 +200,8 @@ export default function App() {
 			{ showPage === "settings" &&
 				<View style={styles.viewPage}>
 					<ScrollView style={styles.viewScroll} contentContainerStyle={{ alignItems:"center", paddingBottom:20 }}>
-						<TextInput onChangeText={(value) => { setSettingsIP(value); }} placeholder="IP..." placeholderTextColor={"rgb(175,175,175)"} style={[styles.inputSettings, { marginTop:60 }]} value={settingsIP}></TextInput>
+						<TextInput onChangeText={(value) => { setSettingsMAC(value); }} placeholder="MAC..." placeholderTextColor={"rgb(175,175,175)"} style={[styles.inputSettings, { marginTop:60 }]} value={settingsMAC}></TextInput>
+						<TextInput onChangeText={(value) => { setSettingsIP(value); }} placeholder="IP..." placeholderTextColor={"rgb(175,175,175)"} style={styles.inputSettings} value={settingsIP}></TextInput>
 						<TextInput onChangeText={(value) => { setSettingsPort(value); }} placeholder="Port..." placeholderTextColor={"rgb(175,175,175)"} style={styles.inputSettings} value={settingsPort}></TextInput>
 						<TextInput onChangeText={(value) => { setSettingsPIN(value); }} placeholder="PIN..." placeholderTextColor={"rgb(175,175,175)"} style={styles.inputSettings} value={settingsPIN} secureTextEntry={true}></TextInput>
 						<View style={styles.viewActions}>
@@ -203,7 +209,12 @@ export default function App() {
 								<Text style={styles.textAction}>Save Configuration</Text>
 							</TouchableOpacity>
 						</View>
-						<View style={[styles.viewActions, { marginTop:100 }]}>
+						<View style={[styles.viewActions, { marginTop:50 }]}>
+							<TouchableOpacity onPress={() => { awakenServer(); }} style={[styles.buttonAction, { backgroundColor:"rgb(50, 200, 75)" }]}>
+								<Text style={styles.textAction}>Awaken Server</Text>
+							</TouchableOpacity>
+						</View>
+						<View style={styles.viewActions}>
 							<TouchableOpacity onPress={() => { shutdownServer(); }} style={[styles.buttonAction, { backgroundColor:"rgb(255, 50, 0)" }]}>
 								<Text style={styles.textAction}>Shutdown Server</Text>
 							</TouchableOpacity>
@@ -211,7 +222,7 @@ export default function App() {
 					</ScrollView>
 				</View>
 			}
-			<FlashMessage position="top" floating={true} hideStatusBar={true} />
+			<FlashMessage position="bottom" floating={true} hideStatusBar={false} />
 		</View>
 	);
 
@@ -240,7 +251,8 @@ export default function App() {
 					if("error" in response) {
 						showMessage({
 							message: response.error,
-							type: "danger"
+							type: "danger",
+							backgroundColor: "rgb(255,50,0)"
 						});
 					} else {
 						getOutput(response.output);
@@ -251,7 +263,8 @@ export default function App() {
 					console.log(error);
 					showMessage({
 						message: "Network Error",
-						type: "warning"
+						type: "warning",
+						backgroundColor: "rgb(240,135,35)"
 					});
 				});
 			}
@@ -274,7 +287,8 @@ export default function App() {
 			if("error" in response) {
 				showMessage({
 					message: response.error,
-					type: "danger"
+					type: "danger",
+					backgroundColor: "rgb(255,50,0)"
 				});
 			} else {
 				setCancel(null);
@@ -285,7 +299,8 @@ export default function App() {
 			console.log(error);
 			showMessage({
 				message: "Network Error",
-				type: "warning"
+				type: "warning",
+				backgroundColor: "rgb(240,135,35)"
 			});
 		});
 	}
@@ -303,7 +318,8 @@ export default function App() {
 			} else {
 				showMessage({
 					message: check,
-					type: "warning"
+					type: "warning",
+					backgroundColor: "rgb(240,135,35)"
 				});
 			}
 		} else if(page === "history") {
@@ -312,10 +328,12 @@ export default function App() {
 			} else {
 				showMessage({
 					message: check,
-					type: "warning"
+					type: "warning",
+					backgroundColor: "rgb(240,135,35)"
 				});
 			}
 		} else if(page === "settings") {
+			setSettingsMAC(configuration["mac"]);
 			setSettingsIP(configuration["ip"]);
 			setSettingsPort(configuration["port"]);
 			setSettingsPIN(configuration["pin"]);
@@ -338,7 +356,8 @@ export default function App() {
 					setHistoryList();
 					showMessage({
 						message: response.error,
-						type: "danger"
+						type: "danger",
+						backgroundColor: "rgb(255,50,0)"
 					});
 				} else {
 					let ids = Object.keys(response).reverse();
@@ -367,7 +386,8 @@ export default function App() {
 					setHistoryList();
 					showMessage({
 						message: "No history found.",
-						type: "danger"
+						type: "danger",
+						backgroundColor: "rgb(255,50,0)"
 					});
 				}
 			}
@@ -377,7 +397,8 @@ export default function App() {
 			setHistoryList();
 			showMessage({
 				message: "Network Error",
-				type: "warning"
+				type: "warning",
+				backgroundColor: "rgb(240,135,35)"
 			});
 		});
 	}
@@ -410,7 +431,8 @@ export default function App() {
 			if("error" in response) {
 				showMessage({
 					message: response.error,
-					type: "danger"
+					type: "danger",
+					backgroundColor: "rgb(255,50,0)"
 				});
 			} else {
 				getHistory();
@@ -420,7 +442,8 @@ export default function App() {
 			console.log(error);
 			showMessage({
 				message: "Network Error",
-				type: "warning"
+				type: "warning",
+				backgroundColor: "rgb(240,135,35)"
 			});
 		});
 	}
@@ -490,7 +513,8 @@ export default function App() {
 				setChanged("empty");
 				showMessage({
 					message: response.error,
-					type: "danger"
+					type: "danger",
+					backgroundColor: "rgb(255,50,0)"
 				});
 			} else {
 				if("files" in response) {
@@ -513,7 +537,8 @@ export default function App() {
 			console.log(error);
 			showMessage({
 				message: "Network Error",
-				type: "warning"
+				type: "warning",
+				backgroundColor: "rgb(240,135,35)"
 			});
 		});
 	}
@@ -535,7 +560,8 @@ export default function App() {
 					if(typeof response === "object" && "error" in response) {
 						showMessage({
 							message: response.error,
-							type: "danger"
+							type: "danger",
+							backgroundColor: "rgb(255,50,0)"
 						});
 					} else {
 						let lines = response.split(/\r\n|\r|\n/);
@@ -557,7 +583,8 @@ export default function App() {
 					console.log(error);
 					showMessage({
 						message: "Network Error",
-						type: "warning"
+						type: "warning",
+						backgroundColor: "rgb(240,135,35)"
 					});
 					clearInterval(update);
 				});
@@ -569,31 +596,43 @@ export default function App() {
 		saveConfig().then((configuration) => {
 			showMessage({
 				message: "User configuration saved.",
-				type: "success"
+				type: "success",
+				backgroundColor: "rgb(50,200,75)"
 			});
 			setConfig(configuration);
 		}).catch(() => {
 			showMessage({
 				message: "User configuration couldn't be saved.",
-				type: "danger"
+				type: "danger",
+				backgroundColor: "rgb(255,50,0)"
 			});
 		});
 	}
 
 	async function saveConfig() {
-		let configuration = { ip:settingsIP, port:settingsPort.toString(), pin:settingsPIN.toString(), api:null };
+		let configuration = { mac:settingsMAC, ip:settingsIP, port:settingsPort.toString(), pin:settingsPIN.toString(), api:null };
 		return new Promise(async (resolve, reject) => {
-			await AsyncStorage.setItem("ip", configuration["ip"]).catch((error) => reject(error));
-			await AsyncStorage.setItem("port", configuration["port"]).catch((error) => reject(error));
-			await AsyncStorage.setItem("pin", configuration["pin"]).catch((error) => reject(error));
-			configuration["api"] = "http://" + configuration["ip"] + ":" + configuration["port"];
-			resolve(configuration);
+			try {
+				if(configuration["mac"].includes(":") && configuration["ip"].includes(".")) {
+					await AsyncStorage.setItem("mac", configuration["mac"]).catch((error) => reject(error));
+					await AsyncStorage.setItem("ip", configuration["ip"]).catch((error) => reject(error));
+					await AsyncStorage.setItem("port", configuration["port"]).catch((error) => reject(error));
+					await AsyncStorage.setItem("pin", configuration["pin"]).catch((error) => reject(error));
+					configuration["api"] = "http://" + configuration["ip"] + ":" + configuration["port"];
+					resolve(configuration);
+				} else {
+					reject();
+				}
+			} catch(e) {
+				reject(e);
+			}
 		});
 	}
 
 	async function getConfig() {
 		let configuration = { ip:null, port:null, pin:null, api:null };
 		return new Promise(async (resolve, reject) => {
+			configuration["mac"] = await AsyncStorage.getItem("mac").catch((error) => reject(error));
 			configuration["ip"] = await AsyncStorage.getItem("ip").catch((error) => reject(error));
 			configuration["port"] = await AsyncStorage.getItem("port").catch((error) => reject(error));
 			configuration["pin"] = await AsyncStorage.getItem("pin").catch((error) => reject(error));
@@ -624,6 +663,32 @@ export default function App() {
 		return valid;
 	}
 
+	function awakenServer() {
+		if(!empty(config["mac"]) && !empty(config["ip"])) {
+			Wol.send(config["ip"], config["mac"], (resolve, message) => {
+				if(resolve) {
+					showMessage({
+						message: "WOL packet sent.",
+						type: "success",
+						backgroundColor: "rgb(50,200,75)"
+					});
+				} else {
+					showMessage({
+						message: "Couldn't send the WOL packet.",
+						type: "danger",
+						backgroundColor: "rgb(255,50,0)"
+					});
+				}
+			});
+		} else {
+			showMessage({
+				message: "Both the MAC and IP address of the server are required.",
+				type: "warning",
+				backgroundColor: "rgb(240,135,35)"
+			});
+		}
+	}
+
 	function shutdownServer() {
 		fetch(config["api"] + "/shutdown?pin=" + config["pin"], {
 			method: "GET",
@@ -638,12 +703,14 @@ export default function App() {
 			if(response.message === "Shutting down.") {
 				showMessage({
 					message: "Shutting down the server...",
-					type: "success"
+					type: "success",
+					backgroundColor: "rgb(50,200,75)"
 				});
 			} else {
 				showMessage({
 					message: "Couldn't shutdown the server.",
-					type: "warning"
+					type: "warning",
+					backgroundColor: "rgb(240,135,35)"
 				});
 			}
 		})
@@ -651,7 +718,8 @@ export default function App() {
 			console.log(error);
 			showMessage({
 				message: "Network Error",
-				type: "warning"
+				type: "warning",
+				backgroundColor: "rgb(240,135,35)"
 			});
 		});
 	}

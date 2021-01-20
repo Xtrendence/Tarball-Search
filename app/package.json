@@ -12,6 +12,7 @@
     "expo-splash-screen": "~0.8.0",
     "expo-status-bar": "~1.0.3",
     "expo-updates": "~0.4.0",
+    "hybrid-crypto-js": "^0.2.4",
     "react": "16.13.1",
     "react-dom": "16.13.1",
     "react-native": "~0.63.4",
@@ -22,7 +23,8 @@
     "react-native-screens": "~2.15.0",
     "react-native-svg": "^12.1.0",
     "react-native-unimodules": "~0.12.0",
-    "react-native-web": "~0.13.12"
+    "react-native-web": "~0.13.12",
+    "react-native-wol": "^1.0.2"
   },
   "devDependencies": {
     "@babel/core": "~7.9.0",
