@@ -4,6 +4,7 @@ import Svg, { Path } from 'react-native-svg';
 import Constants from 'expo-constants';
 import React, { useEffect } from 'react';
 import { StyleSheet, Text, View, TextInput, TouchableOpacity, Dimensions, ScrollView, Modal } from 'react-native';
+import { Crypt, RSA } from 'hybrid-crypto-js';
 import Wol from 'react-native-wol';
 import FlashMessage, { showMessage, hideMessage } from 'react-native-flash-message';
 import changeNavigationBarColor from 'react-native-navigation-bar-color';
@@ -15,6 +16,8 @@ changeNavigationBarColor("#141414");
 
 export default function App() {
 	const [config, setConfig] = React.useState("initial");
+
+	const [loading, setLoading] = React.useState("Starting...");
 
 	const [query, setQuery] = React.useState();
 	const [cancel, setCancel] = React.useState(null);
@@ -39,21 +42,9 @@ export default function App() {
 	const scrollViewRef = React.useRef();
 
 	useEffect(() => {
-		getConfig().then((configuration) => {
-			if(checkConfig(configuration) === true) {
-				setConfig(configuration);
-				setSettingsMAC(configuration["mac"]);
-				setSettingsIP(configuration["ip"]);
-				setSettingsPort(configuration["port"]);
-				setSettingsPIN(configuration["pin"]);
-			}
-		}).catch((error) => {
-			showMessage({
-				message: "User configuration couldn't be fetched.",
-				type: "danger",
-				backgroundColor: "rgb(255,50,0)"
-			});
-		});
+		setTimeout(() => {
+			start();
+		}, 500);
 	}, []);
 
 	useEffect(() => {
@@ -85,7 +76,7 @@ export default function App() {
 	}, [config]);
 
 	useEffect(() => {
-		if(showPage === "search") {
+		if(showPage === "search" && !loading) {
 			setTimeout(() => {
 				scrollViewRef.current.scrollToEnd({ animated:true });
 			}, 250);
@@ -114,117 +105,181 @@ export default function App() {
 	return (
 		<View style={styles.container}>
 			<StatusBar style="light" backgroundColor={"rgb(20,20,20)"}></StatusBar>
-			<View style={styles.topBar}>
-				<View style={styles.topBarLeft}>
-					<View style={styles.viewActions}>
-						<TouchableOpacity onPress={() => { switchPage("search"); }} style={[styles.buttonAction, { backgroundColor:showPage === "search" ? "rgb(0,90,180)" : "rgb(0,150,255)" }]}>
-							<Text style={styles.textAction}>Search</Text>
-						</TouchableOpacity>
-						<TouchableOpacity onPress={() => { switchPage("files"); }} style={[styles.buttonAction, { backgroundColor:showPage === "files" ? "rgb(0,90,180)" : "rgb(0,150,255)" }]}>
-							<Text style={styles.textAction}>Files</Text>
-						</TouchableOpacity>
-						<TouchableOpacity onPress={() => { switchPage("history"); }} style={[styles.buttonAction, { backgroundColor:showPage === "history" ? "rgb(0,90,180)" : "rgb(0,150,255)" }]}>
-							<Text style={styles.textAction}>History</Text>
-						</TouchableOpacity>
-					</View>
+			{ !empty(loading) &&
+				<View style={styles.viewLoading}>
+					<Text style={styles.textLoading}>{loading}</Text>
 				</View>
-				<View style={styles.topBarRight}>
-					<TouchableOpacity onPress={() => { switchPage("settings"); }} style={[styles.buttonAction, { paddingLeft:6, paddingRight:6, backgroundColor:showPage === "settings" ? "rgb(0,90,180)" : "rgb(0,150,255)" }]}>
-						<Svg width="32" height="32" fill={"rgb(255,255,255)"} viewBox="0 0 1792 1792" xmlns="http://www.w3.org/2000/svg"><Path d="M1152 896q0-106-75-181t-181-75-181 75-75 181 75 181 181 75 181-75 75-181zm512-109v222q0 12-8 23t-20 13l-185 28q-19 54-39 91 35 50 107 138 10 12 10 25t-9 23q-27 37-99 108t-94 71q-12 0-26-9l-138-108q-44 23-91 38-16 136-29 186-7 28-36 28h-222q-14 0-24.5-8.5t-11.5-21.5l-28-184q-49-16-90-37l-141 107q-10 9-25 9-14 0-25-11-126-114-165-168-7-10-7-23 0-12 8-23 15-21 51-66.5t54-70.5q-27-50-41-99l-183-27q-13-2-21-12.5t-8-23.5v-222q0-12 8-23t19-13l186-28q14-46 39-92-40-57-107-138-10-12-10-24 0-10 9-23 26-36 98.5-107.5t94.5-71.5q13 0 26 10l138 107q44-23 91-38 16-136 29-186 7-28 36-28h222q14 0 24.5 8.5t11.5 21.5l28 184q49 16 90 37l142-107q9-9 24-9 13 0 25 10 129 119 165 170 7 8 7 22 0 12-8 23-15 21-51 66.5t-54 70.5q26 50 41 98l183 28q13 2 21 12.5t8 23.5z"/></Svg>
-					</TouchableOpacity>
-				</View>
-			</View>
-			{ showPage === "search" &&
-				<View style={styles.viewPage}>
-					<ScrollView style={styles.viewOutput} ref={scrollViewRef}>
-						<Text style={styles.textOutput} selectable={true}>{output}</Text>
-					</ScrollView>
-					<View style={styles.viewSearch}>
-						<TextInput onChangeText={(value) => { setQuery(value); }} placeholder="Search Query..." placeholderTextColor={"rgb(175,175,175)"} style={styles.inputSearch} multiline={true}>{query}</TextInput>
-						<View style={styles.viewActions}>
-							<TouchableOpacity onPress={() => { setOutput(); setQuery(); }} style={styles.buttonAction}>
-								<Text style={styles.textAction}>Clear</Text>
-							</TouchableOpacity>
-							{ cancel !== null &&
-								<TouchableOpacity onPress={() => { cancelSearch(cancel) }} style={styles.buttonAction}>
-									<Text style={styles.textAction}>Cancel</Text>
+			}
+			{ empty(loading) &&
+				<View style={styles.viewApp}>
+					<View style={styles.topBar}>
+						<View style={styles.topBarLeft}>
+							<View style={styles.viewActions}>
+								<TouchableOpacity onPress={() => { switchPage("search"); }} style={[styles.buttonAction, { backgroundColor:showPage === "search" ? "rgb(0,90,180)" : "rgb(0,150,255)" }]}>
+									<Text style={styles.textAction}>Search</Text>
 								</TouchableOpacity>
-							}
-							<TouchableOpacity onPress={() => { search(query) }} style={styles.buttonAction}>
-								<Text style={styles.textAction}>Search { empty(searchFiles) ? "0" : Object.keys(searchFiles).length} {empty(searchFiles) ? "File" : Object.keys(searchFiles).length === 1 ? "File" : "Files"}</Text>
+								<TouchableOpacity onPress={() => { switchPage("files"); }} style={[styles.buttonAction, { backgroundColor:showPage === "files" ? "rgb(0,90,180)" : "rgb(0,150,255)" }]}>
+									<Text style={styles.textAction}>Files</Text>
+								</TouchableOpacity>
+								<TouchableOpacity onPress={() => { switchPage("history"); }} style={[styles.buttonAction, { backgroundColor:showPage === "history" ? "rgb(0,90,180)" : "rgb(0,150,255)" }]}>
+									<Text style={styles.textAction}>History</Text>
+								</TouchableOpacity>
+							</View>
+						</View>
+						<View style={styles.topBarRight}>
+							<TouchableOpacity onPress={() => { switchPage("settings"); }} style={[styles.buttonAction, { paddingLeft:6, paddingRight:6, backgroundColor:showPage === "settings" ? "rgb(0,90,180)" : "rgb(0,150,255)" }]}>
+								<Svg width="32" height="32" fill={"rgb(255,255,255)"} viewBox="0 0 1792 1792" xmlns="http://www.w3.org/2000/svg"><Path d="M1152 896q0-106-75-181t-181-75-181 75-75 181 75 181 181 75 181-75 75-181zm512-109v222q0 12-8 23t-20 13l-185 28q-19 54-39 91 35 50 107 138 10 12 10 25t-9 23q-27 37-99 108t-94 71q-12 0-26-9l-138-108q-44 23-91 38-16 136-29 186-7 28-36 28h-222q-14 0-24.5-8.5t-11.5-21.5l-28-184q-49-16-90-37l-141 107q-10 9-25 9-14 0-25-11-126-114-165-168-7-10-7-23 0-12 8-23 15-21 51-66.5t54-70.5q-27-50-41-99l-183-27q-13-2-21-12.5t-8-23.5v-222q0-12 8-23t19-13l186-28q14-46 39-92-40-57-107-138-10-12-10-24 0-10 9-23 26-36 98.5-107.5t94.5-71.5q13 0 26 10l138 107q44-23 91-38 16-136 29-186 7-28 36-28h222q14 0 24.5 8.5t11.5 21.5l28 184q49 16 90 37l142-107q9-9 24-9 13 0 25 10 129 119 165 170 7 8 7 22 0 12-8 23-15 21-51 66.5t-54 70.5q26 50 41 98l183 28q13 2 21 12.5t8 23.5z"/></Svg>
 							</TouchableOpacity>
 						</View>
 					</View>
-				</View>
-			}
-			{ showPage === "files" &&
-				<View style={styles.viewPage}>
-					<ScrollView style={styles.viewScroll} contentContainerStyle={{ alignItems:"center", paddingBottom:20 }}>
-						{filesList}
-					</ScrollView>
-					<View style={styles.viewFileActions}>
-						<View style={styles.viewActions}>
-							<TouchableOpacity onPress={() => { setSearchFiles({}); setChanged("empty"); }} style={styles.buttonAction}>
-								<Text style={styles.textAction}>Deselect All</Text>
-							</TouchableOpacity>
-							<TouchableOpacity onPress={() => { setSearchFiles(allFiles); setChanged(new Date()); }} style={styles.buttonAction}>
-								<Text style={styles.textAction}>Select All</Text>
-							</TouchableOpacity>
-						</View>
-					</View>
-				</View>
-			}
-			{ showPage === "history" &&
-				<View style={styles.viewPage}>
-					<ScrollView style={styles.viewScroll} contentContainerStyle={{ alignItems:"center", paddingBottom:20 }}>
-						{historyList}
-					</ScrollView>
-					<Modal visible={deleteModal} animationType="fade" transparent={true}>
-						<View style={styles.modalBackground}></View>
-						<View style={styles.modalForeground}>
-							<View style={styles.modalDelete}>
-								<Text style={styles.modalText}>Are you sure you'd like to delete this file?</Text>
+					{ showPage === "search" &&
+						<View style={styles.viewPage}>
+							<ScrollView style={styles.viewOutput} ref={scrollViewRef}>
+								<Text style={styles.textOutput} selectable={true}>{output}</Text>
+							</ScrollView>
+							<View style={styles.viewSearch}>
+								<TextInput onChangeText={(value) => { setQuery(value); }} placeholder="Search Query..." placeholderTextColor={"rgb(175,175,175)"} style={styles.inputSearch} multiline={true}>{query}</TextInput>
 								<View style={styles.viewActions}>
-									<TouchableOpacity onPress={() => { deleteAlert(null); }} style={styles.buttonAction}>
-										<Text style={styles.textAction}>Cancel</Text>
+									<TouchableOpacity onPress={() => { setOutput(); setQuery(); }} style={styles.buttonAction}>
+										<Text style={styles.textAction}>Clear</Text>
 									</TouchableOpacity>
-									<TouchableOpacity onPress={() => { deleteHistory(deleteID); }} style={styles.buttonAction}>
-										<Text style={styles.textAction}>Confirm</Text>
+									{ cancel !== null &&
+										<TouchableOpacity onPress={() => { cancelSearch(cancel) }} style={styles.buttonAction}>
+											<Text style={styles.textAction}>Cancel</Text>
+										</TouchableOpacity>
+									}
+									<TouchableOpacity onPress={() => { search(query) }} style={styles.buttonAction}>
+										<Text style={styles.textAction}>Search { empty(searchFiles) ? "0" : Object.keys(searchFiles).length} {empty(searchFiles) ? "File" : Object.keys(searchFiles).length === 1 ? "File" : "Files"}</Text>
 									</TouchableOpacity>
 								</View>
 							</View>
 						</View>
-					</Modal>
-				</View>
-			}
-			{ showPage === "settings" &&
-				<View style={styles.viewPage}>
-					<ScrollView style={styles.viewScroll} contentContainerStyle={{ alignItems:"center", paddingBottom:20 }}>
-						<TextInput onChangeText={(value) => { setSettingsMAC(value); }} placeholder="MAC..." placeholderTextColor={"rgb(175,175,175)"} style={[styles.inputSettings, { marginTop:60 }]} value={settingsMAC}></TextInput>
-						<TextInput onChangeText={(value) => { setSettingsIP(value); }} placeholder="IP..." placeholderTextColor={"rgb(175,175,175)"} style={styles.inputSettings} value={settingsIP}></TextInput>
-						<TextInput onChangeText={(value) => { setSettingsPort(value); }} placeholder="Port..." placeholderTextColor={"rgb(175,175,175)"} style={styles.inputSettings} value={settingsPort}></TextInput>
-						<TextInput onChangeText={(value) => { setSettingsPIN(value); }} placeholder="PIN..." placeholderTextColor={"rgb(175,175,175)"} style={styles.inputSettings} value={settingsPIN} secureTextEntry={true}></TextInput>
-						<View style={styles.viewActions}>
-							<TouchableOpacity onPress={() => { saveSettings(); }} style={styles.buttonAction}>
-								<Text style={styles.textAction}>Save Configuration</Text>
-							</TouchableOpacity>
+					}
+					{ showPage === "files" &&
+						<View style={styles.viewPage}>
+							<ScrollView style={styles.viewScroll} contentContainerStyle={{ alignItems:"center", paddingBottom:20 }}>
+								{filesList}
+							</ScrollView>
+							<View style={styles.viewFileActions}>
+								<View style={styles.viewActions}>
+									<TouchableOpacity onPress={() => { setSearchFiles({}); setChanged("empty"); }} style={styles.buttonAction}>
+										<Text style={styles.textAction}>Deselect All</Text>
+									</TouchableOpacity>
+									<TouchableOpacity onPress={() => { setSearchFiles(allFiles); setChanged(new Date()); }} style={styles.buttonAction}>
+										<Text style={styles.textAction}>Select All</Text>
+									</TouchableOpacity>
+								</View>
+							</View>
 						</View>
-						<View style={[styles.viewActions, { marginTop:50 }]}>
-							<TouchableOpacity onPress={() => { awakenServer(); }} style={[styles.buttonAction, { backgroundColor:"rgb(50, 200, 75)" }]}>
-								<Text style={styles.textAction}>Awaken Server</Text>
-							</TouchableOpacity>
+					}
+					{ showPage === "history" &&
+						<View style={styles.viewPage}>
+							<ScrollView style={styles.viewScroll} contentContainerStyle={{ alignItems:"center", paddingBottom:20 }}>
+								{historyList}
+							</ScrollView>
+							<Modal visible={deleteModal} animationType="fade" transparent={true}>
+								<View style={styles.modalBackground}></View>
+								<View style={styles.modalForeground}>
+									<View style={styles.modalDelete}>
+										<Text style={styles.modalText}>Are you sure you'd like to delete this file?</Text>
+										<View style={styles.viewActions}>
+											<TouchableOpacity onPress={() => { deleteAlert(null); }} style={styles.buttonAction}>
+												<Text style={styles.textAction}>Cancel</Text>
+											</TouchableOpacity>
+											<TouchableOpacity onPress={() => { deleteHistory(deleteID); }} style={styles.buttonAction}>
+												<Text style={styles.textAction}>Confirm</Text>
+											</TouchableOpacity>
+										</View>
+									</View>
+								</View>
+							</Modal>
 						</View>
-						<View style={styles.viewActions}>
-							<TouchableOpacity onPress={() => { shutdownServer(); }} style={[styles.buttonAction, { backgroundColor:"rgb(255, 50, 0)" }]}>
-								<Text style={styles.textAction}>Shutdown Server</Text>
-							</TouchableOpacity>
+					}
+					{ showPage === "settings" &&
+						<View style={styles.viewPage}>
+							<ScrollView style={styles.viewScroll} contentContainerStyle={{ alignItems:"center", paddingBottom:20 }}>
+								<TextInput onChangeText={(value) => { setSettingsMAC(value); }} placeholder="MAC..." placeholderTextColor={"rgb(175,175,175)"} style={[styles.inputSettings, { marginTop:60 }]} value={settingsMAC}></TextInput>
+								<TextInput onChangeText={(value) => { setSettingsIP(value); }} placeholder="IP..." placeholderTextColor={"rgb(175,175,175)"} style={styles.inputSettings} value={settingsIP}></TextInput>
+								<TextInput onChangeText={(value) => { setSettingsPort(value); }} placeholder="Port..." placeholderTextColor={"rgb(175,175,175)"} style={styles.inputSettings} value={settingsPort}></TextInput>
+								<TextInput onChangeText={(value) => { setSettingsPIN(value); }} placeholder="PIN..." placeholderTextColor={"rgb(175,175,175)"} style={styles.inputSettings} value={settingsPIN} secureTextEntry={true}></TextInput>
+								<View style={styles.viewActions}>
+									<TouchableOpacity onPress={() => { saveSettings(); }} style={styles.buttonAction}>
+										<Text style={styles.textAction}>Save Configuration</Text>
+									</TouchableOpacity>
+								</View>
+								<View style={[styles.viewActions, { marginTop:50 }]}>
+									<TouchableOpacity onPress={() => { awakenServer(); }} style={[styles.buttonAction, { backgroundColor:"rgb(50, 200, 75)" }]}>
+										<Text style={styles.textAction}>Awaken Server</Text>
+									</TouchableOpacity>
+								</View>
+								<View style={styles.viewActions}>
+									<TouchableOpacity onPress={() => { shutdownServer(); }} style={[styles.buttonAction, { backgroundColor:"rgb(255, 50, 0)" }]}>
+										<Text style={styles.textAction}>Shutdown Server</Text>
+									</TouchableOpacity>
+								</View>
+							</ScrollView>
 						</View>
-					</ScrollView>
+					}
 				</View>
 			}
 			<FlashMessage position="bottom" floating={true} hideStatusBar={false} />
 		</View>
 	);
+
+	async function start() {
+		getKeys().then(async (keys) => {
+			await AsyncStorage.setItem("publicKey", keys.publicKey);
+			await AsyncStorage.setItem("privateKey", keys.privateKey);
+			
+			setLoading(null);
+
+			getConfig().then((configuration) => {
+				if(checkConfig(configuration) === true) {
+					setConfig(configuration);
+					setSettingsMAC(configuration["mac"]);
+					setSettingsIP(configuration["ip"]);
+					setSettingsPort(configuration["port"]);
+					setSettingsPIN(configuration["pin"]);
+				}
+			}).catch((error) => {
+				showMessage({
+					message: "User configuration couldn't be fetched.",
+					type: "danger",
+					backgroundColor: "rgb(255,50,0)"
+				});
+			});
+		}).catch(() => {
+			start();
+			showMessage({
+				message: "Encryption keys couldn't be fetched. Retrying...",
+				type: "danger",
+				backgroundColor: "rgb(255,50,0)"
+			});
+		});
+	}
+
+	async function getKeys() {
+		let publicKey = await AsyncStorage.getItem("publicKey");
+		let privateKey = await AsyncStorage.getItem("privateKey");
+
+		if(empty(publicKey) || empty(privateKey)) {
+			setLoading("Generating Keys...");
+			return new Promise(async (resolve, reject) => {
+				setTimeout(async () => {
+					let rsa = new RSA({ keySize:1024 });
+					rsa.generateKeyPair(keyPair => {
+						if(!empty(keyPair.publicKey) && !empty(keyPair.privateKey)) {
+							resolve(keyPair);
+						} else {
+							reject();
+						}				
+					});
+				}, 500);
+			});
+		}
+
+		return { publicKey:publicKey, privateKey:privateKey };
+	}
 
 	async function search(searchQuery) {
 		try {
@@ -742,6 +797,28 @@ const styles = StyleSheet.create({
 		backgroundColor: "rgb(20,20,20)",
 		alignItems: "center",
 		justifyContent: "flex-start",
+	},
+	viewApp: {
+		flex: 1,
+		width: "100%",
+		height: "100%",
+		backgroundColor: "rgb(20,20,20)",
+		alignItems: "center",
+		justifyContent: "flex-start",
+	},
+	viewLoading: {
+		flex: 1,
+		width: "100%",
+		height: "100%",
+		backgroundColor: "rgb(20,20,20)",
+		alignItems: "center",
+		justifyContent: "center",
+	},
+	textLoading: {
+		fontSize: 32,
+		fontFamily: "Arial",
+		color: "rgb(255,255,255)",
+		fontWeight: "bold",
 	},
 	topBar: {
 		flex: 1,
