@@ -101,31 +101,36 @@ function start() {
 
 					try {
 						let query = decrypt(privateKey, base64.decode(req.body.query)).message;
-						if(!empty(req.body.files)) {
-							let files = JSON.parse(decrypt(privateKey, base64.decode(req.body.files)).message);
-							let valid = true;
-							files.map((file) => {
-								if(!fs.existsSync(file)) {
-									valid = false;
+
+						if(!empty(query)) {
+							if(!empty(req.body.files)) {
+								let files = JSON.parse(decrypt(privateKey, base64.decode(req.body.files)).message);
+								let valid = true;
+								files.map((file) => {
+									if(!fs.existsSync(file)) {
+										valid = false;
+									}
+								});
+								if(valid) {
+									readFiles(id, files, 0, query);
 								}
-							});
-							if(valid) {
-								readFiles(id, files, 0, query);
+							} else {
+								readFiles(id, findByExt(filesDirectory, "tar.gz"), 0, query);
 							}
+
+							let response = {
+								message:"Searching...", 
+								id:id,
+								output:"http://" + ip + ":" + port + "/output?id=" + id + "&pin=" + req.body.pin + "&publicKey=" + req.body.publicKey,
+								cancel:"http://" + ip + ":" + port + "/cancel?id=" + id + "&pin=" + req.body.pin + "&publicKey=" + req.body.publicKey
+							};
+
+							let queryKey = base64.decode(req.body.publicKey);
+							let json = JSON.stringify(response);
+							res.json({ response:base64.encode(encrypt(queryKey, json)) });
 						} else {
-							readFiles(id, findByExt(filesDirectory, "tar.gz"), 0, query);
+							res.json({ error:"No search query entered." });
 						}
-
-						let response = {
-							message:"Searching...", 
-							id:id,
-							output:"http://" + ip + ":" + port + "/output?id=" + id + "&pin=" + req.body.pin + "&publicKey=" + req.body.publicKey,
-							cancel:"http://" + ip + ":" + port + "/cancel?id=" + id + "&pin=" + req.body.pin + "&publicKey=" + req.body.publicKey
-						};
-
-						let queryKey = base64.decode(req.body.publicKey);
-						let json = JSON.stringify(response);
-						res.json({ response:base64.encode(encrypt(queryKey, json)) });
 					} catch(e) {
 						console.log(e);
 					}
