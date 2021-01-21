@@ -30,7 +30,4 @@ To describe an example scenario such as the app requesting the list of files the
 
 The server's public key is requested by the app. The user's PIN is encrypted with AES-256, and the AES-256 key is encrypted with the server's public key. The user's public key is then sent to the "/files" endpoint of the API along with the encrypted PIN. The server uses its private key to decrypt the AES key, and uses the AES key to decrypt the PIN. It then fetches the list of files, encrypts it using AES, encrypts the AES key with the user's public key, and sends it back. The user finally uses their private key to decrypt the AES key, and uses the AES key to decrypt the list of files, which get shown to the user. The IV (initialization vector) used by AES is different each time as well.
 
-![Screenshot](https://i.imgur.com/0LBu95J.jpg)
-![Screenshot](https://i.imgur.com/UnQjeBU.jpg)
-![Screenshot](https://i.imgur.com/eQpqDit.jpg)
-![Screenshot](https://i.imgur.com/O45GbAe.jpg)
+![Screenshot](https://i.imgur.com/DafoTIb.png)
