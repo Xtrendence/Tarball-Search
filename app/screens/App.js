@@ -11,7 +11,7 @@ import FlashMessage, { showMessage, hideMessage } from 'react-native-flash-messa
 import changeNavigationBarColor from 'react-native-navigation-bar-color';
 import CardButton from '../components/CardButton';
 
-let keySize = 1024;
+let keySize = 4096;
 
 const screenWidth = Dimensions.get("window").width;
 

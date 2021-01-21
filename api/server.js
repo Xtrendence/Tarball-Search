@@ -33,7 +33,7 @@ const pinFile = path.join(__dirname, "./config/pin.txt");
 const publicKeyFile = path.join(__dirname, "./config/public.txt");
 const privateKeyFile = path.join(__dirname, "./config/private.txt");
 
-let keySize = 1024;
+let keySize = 4096;
 let activeSearches = {};
 let cancelled = false;
 let publicKey;
